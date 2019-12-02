@@ -1,2 +1,2 @@
 # XyCar
-autonomous driving using xycar
+autonomous driving using ROS and XyCar B2 
