@@ -7,18 +7,13 @@ import math
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
+
 class LineDetector:
 
     def __init__(self, topic):
         # Initialize various class-defined attributes, and then...
         self.cam_img = np.zeros(shape=(480, 640, 3), dtype=np.uint8)
         self.vid_out = cv2.VideoWriter('/home/nvidia/output.avi', cv2.VideoWriter_fourcc(*'MJPG'), 30, (640, 480))
-        '''
-        self.mask = np.zeros(shape=(self.scan_height, self.image_width),
-                             dtype=np.uint8)
-        self.edge = np.zeros(shape=(self.scan_height, self.image_width),
-                             dtype=np.uint8)
-        '''
         self.bridge = CvBridge()
         rospy.Subscriber(topic, Image, self.conv_image)
         self.before = np.array([[0, 315], [639, 305], [170, 260], [460, 250]], dtype='float32')
@@ -31,24 +26,8 @@ class LineDetector:
     def conv_image(self, data):
         self.cam_img = self.bridge.imgmsg_to_cv2(data, 'bgr8')
         self.vid_out.write(self.cam_img)
-        '''
-        v = self.roi_vertical_pos
-        roi = self.cam_img[v:v + self.scan_height, :]
-
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        avg_value = np.average(hsv[:, :, 2])
-        value_threshold = avg_value * 1.0
-        lbound = np.array([0, 0, value_threshold], dtype=np.uint8)
-        ubound = np.array([100, 255, 255], dtype=np.uint8)
-        self.mask = cv2.inRange(hsv, lbound, ubound)
-
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        self.edge = cv2.Canny(blur, 60, 70)
-        '''
 
     def detect_lines(self):
-        #self.theta = 0.0
         frame = self.cam_img
         tdSize = (100, 210)
         m = cv2.getPerspectiveTransform(self.before, self.after)
@@ -59,10 +38,9 @@ class LineDetector:
         edges = cv2.Canny(gray, 50, 150, apertureSize=3)
         edges = cv2.warpPerspective(edges, m, tdSize)
         lines = cv2.HoughLines(edges, 1, np.pi / 180, 80)
-        
+
         left, right = -1, -1
-        #lCnt, rCnt = 0, 0
-        
+
         if lines is not None:
             cnts = [0 for _ in range(50)]
             vals = [0.0 for _ in range(len(cnts))]
@@ -118,8 +96,8 @@ class LineDetector:
                     cnts[index] = 0
                 theta = sum(thetas) / len(thetas)
 
-                #weight = 0.2
-                self.theta = theta #self.theta * (1.0 - weight) + theta * weight
+                # weight = 0.2
+                self.theta = theta  # self.theta * (1.0 - weight) + theta * weight
 
                 pts = []
                 half = len(ptCnts) // 2
@@ -149,18 +127,14 @@ class LineDetector:
         cv2.imshow('hough', topdown)
         cv2.waitKey(1)
         '''
-
-        #left = left / lCnt if lCnt > 0 else -1
-        #right = right / rCnt if rCnt > 0 else -1
-        # '''
-	if left >= 0:
+        if left >= 0:
             cv2.circle(topdown, (int(left), 199), 3, (0, 0, 255), 3)
 
         if right >= 0:
             cv2.circle(topdown, (int(right), 199), 3, (255, 0, 0), 3)
 
         cv2.imshow('hough', topdown)
-        #cv2.waitKey(1)
+        # cv2.waitKey(1)
 
         frame = cv2.circle(frame, (0, 315), 2, (0, 255, 0), 3)
         frame = cv2.circle(frame, (639, 320), 2, (0, 255, 0), 3)

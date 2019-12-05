@@ -31,10 +31,9 @@ class AutoDrive:
     def trace(self):
         obs_l, obs_m, obs_r = self.obstacle_detector.get_distance()
         line_theta, left, right = self.line_detector.detect_lines()
-        angle = self.steer(line_theta, left, right)
-        speed = self.accelerate(angle, line_theta, left, right)
+        angle = self.steer(line_theta)
+        speed = self.accelerate(line_theta)
         print(line_theta)
-        # print(line_theta, left, right)
         print("left: {} mid: {} right: {}".format(obs_l, obs_m, obs_r))
         cnt = 0
         s = 0
@@ -65,114 +64,61 @@ class AutoDrive:
             s += obs_r
         if cnt >= 2:
             dis = s / cnt
-            start_time = time.time()
+        start_time = time.time()
+        if ((cnt >= 3) or (obs_m != 0 and obs_m <= 70 and self.average(self.prev_m) <= 75)) or (
+                self.average(self.prev_l) <= 75 and self.average(self.prev_m) <= 75 and self.average(
+                self.prev_r) <= 75):
+            if time.time() - start_time > 50:
+                for i in range(2):
+                    self.driver.drive(90, 90)
+                    time.sleep(0.1)
+                    self.driver.drive(90, 60)
+                    time.sleep(0.1)
+                self.driver.drive(90, 90)
+                time.sleep(5)
+        else:
+            self.driver.drive(angle + 90 + 5.7, speed)
 
-    if ((cnt >= 3) or (obs_m != 0 and obs_m <= 70 and self.average(self.prev_m) <= 75)) or (
-            self.average(self.prev_l) <= 75 and self.average(self.prev_m) <= 75 and self.average(
-        self.prev_r) <= 75):
-        if time.time() - start_time > 50:
-    for i in range(2):
-        self.driver.drive(90, 90)
-        time.sleep(0.1)
-        self.driver.drive(90, 60)
-        time.sleep(0.1)
-    self.driver.drive(90, 90)
-    time.sleep(1)
+        if cnt >= 2:
+            self.prev_dis = dis
 
-else:
-self.driver.drive(angle + 90 + 5.7, speed)
-
-if cnt >= 2:
-    self.prev_dis = dis
-
-
-def steer(self, theta, left, right):
-    """
-    weight = 0.0
-
-    if left == -1:
-        weight = 0.0
-
-    elif right == -1:
-        weight = 0.0
-    else:
-        mid = (left + right) / 2
-        diff = 55-mid
-
-        if abs(diff) < 3:
-            weight = 0.0
-        # car is at right
-        elif diff < 0:
-            weight = -1.0
-        elif diff > 0:
-            weight = 1.0
-    """
-    K = 0
-    if -0.8 <= theta <= 0.8:
-        K = 8.0
-    elif -5 <= theta <= 5:
-        K = 3.0
-    elif -10 <= theta <= 10:
-        K = 2.3
-    elif -15 <= theta <= 15:
-        '''
-        if theta < 0:
-            if theta > -10:
-                K = 1.86
+    def steer(self, theta):
+        threshold = 2.0
+        if -0.8 <= theta <= 0.8:
+            threshold = 8.0
+        elif -5 <= theta <= 5:
+            threshold = 3.0
+        elif -10 <= theta <= 10:
+            threshold = 2.3
+        elif -15 <= theta <= 15:
+            if theta < 0:
+                threshold = 1.5
             else:
-                K = 1.4
+                threshold = 2.0
         else:
-            K = 1.75
-        '''
-        if theta < 0:
-            K = 1.5
-        else:
-            K = 2.0
-    else:  # elif abs(theta) < 30:
-        if theta < 0:
-            K = 2.5
-        else:
-            K = 3.5
-    # else:
-    #    K =
-    '''
-    elif theta >= 20:
-        K = 3.0
-    elif theta <= -20:
-        K = 2.1
-    else:
-        K = 1.5
-    '''
-    """
-    if theta > 0:
-        K = 1.75
-    else:
-        K = 1.6
-    """
-    angle = theta * K
+            if theta < 0:
+                threshold = 2.5
+            else:
+                threshold = 3.5
+        angle = theta * threshold
 
-    return angle  # + (weight * 15)
-    # return angle
+        return angle
 
+    def accelerate(self, theta):
+        K = 135
 
-def accelerate(self, angle, theta, left, right):
-    K = 135
+        if abs(theta) > 4:
+            self.slow_time = time.time() + 2
 
-    if abs(theta) > 4:
-        self.slow_time = time.time() + 2
+        if time.time() < self.slow_time:
+            K = 130
 
-    if time.time() < self.slow_time:
-        K = 130
+        speed = K  # - min(abs(theta)/2, 10)
 
-    speed = K  # - min(abs(theta)/2, 10)
+        return speed
 
-    return speed
-
-    def
-
-
-def exit(self):
-    print('finished')
+    def exit(self):
+        print('finished')
 
 
 if __name__ == '__main__':
