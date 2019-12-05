@@ -1,149 +1,179 @@
+#!/usr/bin/env python
+
 import rospy
 import cv2
 import numpy as np
-import time
+import math
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-
-
-IMG_W = 640
-scan_width, scan_height = 300, 80
-roi_vertical_pos = 250
-area_width = 5
-area_height = 5
-row_begin = (scan_height - area_height) // 2 - 10
-row_end = row_begin + area_height
-lmid, rmid = scan_width, IMG_W - scan_width
-pixel_cnt_threshold = 0.6 * area_width * area_height
-
 
 class LineDetector:
 
     def __init__(self, topic):
+        # Initialize various class-defined attributes, and then...
         self.cam_img = np.zeros(shape=(480, 640, 3), dtype=np.uint8)
-        self.result = np.zeros(shape=(scan_height, IMG_W, 3), dtype=np.uint8)
+        self.vid_out = cv2.VideoWriter('/home/nvidia/output.avi', cv2.VideoWriter_fourcc(*'MJPG'), 30, (640, 480))
+        '''
+        self.mask = np.zeros(shape=(self.scan_height, self.image_width),
+                             dtype=np.uint8)
+        self.edge = np.zeros(shape=(self.scan_height, self.image_width),
+                             dtype=np.uint8)
+        '''
         self.bridge = CvBridge()
-        self.direction_info = [-40, 680]
-        self.img_debug = np.zeros(shape=(480, 640, 3), dtype=np.uint8)
         rospy.Subscriber(topic, Image, self.conv_image)
+        self.before = np.array([[0, 315], [639, 305], [170, 260], [460, 250]], dtype='float32')
+        self.after = np.array([[0, 100], [100, 100], [0, -100], [100, -100]], dtype='float32')
+        self.theta = 0.0
 
-    def imageApplyRoi(self, image):
-        return image[roi_vertical_pos:roi_vertical_pos + scan_height, :]
-
-    def imageApplyCvt(self, image):
-        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    def imageApplyGaussianBlur(self, image, kernelSize):
-        return cv2.GaussianBlur(image, (kernelSize, kernelSize), 0)
-
-    def imageApplyCanny(self, image):
-        return cv2.Canny(image, 50, 80)
+    def __del__(self):
+        self.vid_out.release()
 
     def conv_image(self, data):
         self.cam_img = self.bridge.imgmsg_to_cv2(data, 'bgr8')
+        self.vid_out.write(self.cam_img)
+        '''
+        v = self.roi_vertical_pos
+        roi = self.cam_img[v:v + self.scan_height, :]
 
-        img_roi = self.imageApplyRoi(self.cam_img)
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        avg_value = np.average(hsv[:, :, 2])
+        value_threshold = avg_value * 1.0
+        lbound = np.array([0, 0, value_threshold], dtype=np.uint8)
+        ubound = np.array([100, 255, 255], dtype=np.uint8)
+        self.mask = cv2.inRange(hsv, lbound, ubound)
 
-        img_gray = self.imageApplyCvt(img_roi)
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        self.edge = cv2.Canny(blur, 60, 70)
+        '''
 
-        img_blur = self.imageApplyGaussianBlur(img_gray, 7)
+    def detect_lines(self):
+        #self.theta = 0.0
+        frame = self.cam_img
+        tdSize = (100, 210)
+        m = cv2.getPerspectiveTransform(self.before, self.after)
+        topdown = cv2.warpPerspective(frame, m, tdSize)
 
-        img_canny = self.imageApplyCanny(img_blur)
-
-
-        lines = cv2.HoughLines(img_canny, 1, np.pi / 180, 80, None, 0, 0)
-
-        left = [0, 0, 0, 0]
-        left_count = 0
-        right = [0, 0, 0, 0]
-        right_count = 0
-
-        result = np.zeros((scan_height, IMG_W, 3), dtype=np.uint8)
-        test = np.zeros((scan_height, IMG_W, 3), dtype=np.uint8)
-
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+        edges = cv2.warpPerspective(edges, m, tdSize)
+        lines = cv2.HoughLines(edges, 1, np.pi / 180, 80)
+        
+        left, right = -1, -1
+        #lCnt, rCnt = 0, 0
+        
         if lines is not None:
+            cnts = [0 for _ in range(50)]
+            vals = [0.0 for _ in range(len(cnts))]
+            cnt = 0
+
+            ptCnts = [0 for _ in range(10)]
+            ptVals = [0.0 for _ in range(len(ptCnts))]
+
             for line in lines:
                 for rho, theta in line:
+                    index = int(theta / np.pi * len(cnts))
+                    cnts[index] += 1
+                    vals[index] += theta
+                    cnt += 1
+
                     a = np.cos(theta)
                     b = np.sin(theta)
                     x0 = a * rho
                     y0 = b * rho
-
+                    '''
                     x1 = int(x0 + 1000 * (-b))
                     y1 = int(y0 + 1000 * (a))
                     x2 = int(x0 - 1000 * (-b))
                     y2 = int(y0 - 1000 * (a))
 
-                    if float(y2 - y1) / float(x2 - x1) <= -0.2:
-                        left[0] += x1
-                        left[1] += y1
-                        left[2] += x2
-                        left[3] += y2
-                        left_count += 1
-                        cv2.line(test, (x1, y1), (x2, y2), (255, 0, 0), 3, cv2.LINE_AA)
-                    elif float(y2 - y1) / float(x2 - x1) >= 0.2:
-                        right[0] += x1
-                        right[1] += y1
-                        right[2] += x2
-                        right[3] += y2
-                        right_count += 1
-                        cv2.line(test, (x1, y1), (x2, y2), (0, 255, 0), 3, cv2.LINE_AA)
+                    cv2.line(topdown, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    '''
+                    t = (199 - y0) / a
+                    x = x0 - t * b
+
+                    index = min(max(int(x / tdSize[0] * len(ptCnts)), 0), len(ptCnts) - 1)
+                    ptCnts[index] += 1
+                    ptVals[index] += x
+                    '''
+                    if x < 50:
+                        left += x
+                        lCnt += 1
                     else:
-                        cv2.line(test, (x1, y1), (x2, y2), (0, 0, 255), 3, cv2.LINE_AA)
+                        right += x
+                        rCnt += 1
+                    '''
+            if cnt > 0:
+                thetas = []
 
-        if left_count > 0:
-            for i, value in enumerate(left):
-                left[i] = value // left_count
-        if right_count > 0:
-            for i, value in enumerate(right):
-                right[i] = value // right_count
+                for i in range(2):
+                    index = cnts.index(max(cnts))
+                    if cnts[index] == 0:
+                        break
+                    theta = vals[index] / cnts[index]
+                    if theta > math.pi / 2:
+                        theta -= math.pi
+                    thetas.append(theta)
+                    cnts[index] = 0
+                theta = sum(thetas) / len(thetas)
 
-        cv2.line(result, (left[0], left[1]), (left[2], left[3]), (0, 255, 0), 3, cv2.LINE_AA)
-        cv2.line(result, (right[0], right[1]), (right[2], right[3]), (255, 0, 0), 3, cv2.LINE_AA)
+                #weight = 0.2
+                self.theta = theta #self.theta * (1.0 - weight) + theta * weight
 
-        hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+                pts = []
+                half = len(ptCnts) // 2
 
-        lbound = np.array([0, 0, 60], dtype=np.uint8)
-        ubound = np.array([131, 255, 255], dtype=np.uint8)
+                for cnts, vals in [(ptCnts[:half], ptVals[:half]), (ptCnts[half:], ptVals[half:])]:
+                    index = cnts.index(max(cnts))
+                    pt = vals[index] / cnts[index] if cnts[index] > 0 else -1
+                    pts.append(pt)
 
-        bin = cv2.inRange(hsv, lbound, ubound)
-        view = cv2.cvtColor(bin, cv2.COLOR_GRAY2BGR)
+                left, right = pts
+                '''
+                a = np.cos(theta)
+                b = np.sin(theta)
+                x0 = 50
+                y0 = 100
+                x1 = int(x0 + 1000 * (-b))
+                y1 = int(y0 + 1000 * (a))
+                x2 = int(x0 - 1000 * (-b))
+                y2 = int(y0 - 1000 * (a))
 
-        # self.img_debug = result
-
-        left, right = -40, 680
-
-        for l in range(area_width, lmid):
-            area = bin[row_begin:row_end, l - area_width:l]
-            if cv2.countNonZero(area) > pixel_cnt_threshold:
-                left = l
-                break
-
-        for r in range(IMG_W - area_width, rmid, -1):
-            area = bin[row_begin:row_end, r:r + area_width]
-            if cv2.countNonZero(area) > pixel_cnt_threshold:
-                right = r
-                break
-
-        if left != -40:
-            lsquare = cv2.rectangle(view,
-                                    (left - area_width, row_begin),
-                                    (left, row_end),
-                                    (0, 255, 0), 3)
+                cv2.line(topdown, (x1, y1), (x2, y2), (0, 255, 0), 5)
+                '''
         else:
-            pass
-            # print("Lost left line")
-
-        if right != 680:
-            rsquare = cv2.rectangle(view,
-                                    (right, row_begin),
-                                    (right + area_width, row_end),
-                                    (0, 255, 0), 3)
-        else:
-            pass
-            # print("Lost right line")
-        self.direction_info = [left, right]
-        # print(left, right)
-
-    def show_image(self):
+            self.theta *= 0.915
+        '''
+        cv2.imshow("origin", frame)
+        cv2.imshow('hough', topdown)
         cv2.waitKey(1)
+        '''
+
+        #left = left / lCnt if lCnt > 0 else -1
+        #right = right / rCnt if rCnt > 0 else -1
+        # '''
+	if left >= 0:
+            cv2.circle(topdown, (int(left), 199), 3, (0, 0, 255), 3)
+
+        if right >= 0:
+            cv2.circle(topdown, (int(right), 199), 3, (255, 0, 0), 3)
+
+        cv2.imshow('hough', topdown)
+        #cv2.waitKey(1)
+
+        frame = cv2.circle(frame, (0, 315), 2, (0, 255, 0), 3)
+        frame = cv2.circle(frame, (639, 320), 2, (0, 255, 0), 3)
+
+        frame = cv2.circle(frame, (170, 260), 2, (0, 255, 0), 3)
+        frame = cv2.circle(frame, (460, 250), 2, (0, 255, 0), 3)
+        cv2.imshow('origin', frame)
+        cv2.imshow('edges', edges)
+        cv2.waitKey(1)
+        # '''
+        return self.theta * 180 / math.pi, left, right
+
+    def show_images(self, left, right):
+        # Display images for debugging purposes;
+        # do not forget to call cv2.waitKey().
+        pass
