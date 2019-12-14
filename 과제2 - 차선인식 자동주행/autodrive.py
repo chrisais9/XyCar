@@ -92,9 +92,9 @@ class AutoDrive:
             threshold = 2.3
         elif -15 <= theta <= 15:
             if theta < 0:
-                threshold = 1.5
-            else:
                 threshold = 2.0
+            else:
+                threshold = 2.5
         else:
             if theta < 0:
                 threshold = 2.5
