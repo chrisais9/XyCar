@@ -24,7 +24,7 @@ def detectRed(img):
     if len(cnts) > 0:
         c = max(cnts, key=cv2.contourArea)
         ((x, y), radius) = cv2.minEnclosingCircle(c)
-        if radius > 10:
+        if radius > 20:
             return True
 
     return False
@@ -45,7 +45,7 @@ def detectBlue(img):
     if len(cnts) > 0:
         c = max(cnts, key=cv2.contourArea)
         ((x, y), radius) = cv2.minEnclosingCircle(c)
-        if radius > 10:
+        if radius > 15:
             return True
 
     return False

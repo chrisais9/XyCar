@@ -7,7 +7,6 @@ from std_msgs.msg import Int32MultiArray
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-ack_publisher = None
 capture = np.zeros(shape=(480, 640, 3), dtype=np.uint8)
 bridge = CvBridge()
 
@@ -43,6 +42,13 @@ def conv_image(data):
     global capture
     capture = bridge.imgmsg_to_cv2(data, "bgr8")
 
+def wheel_reset():
+    for i in range(2):
+        drive(90, 90)
+        time.sleep(0.1)
+        drive(90, 60)
+        time.sleep(0.1)
+
 
 rospy.init_node("ad")
 ack_publisher = rospy.Publisher("xycar_motor_msg", Int32MultiArray, queue_size=1)
@@ -54,6 +60,7 @@ park = False
 before = False
 starttime = 0
 nowtime = 0
+prev_key =0
 
 flag = False
 while True:
@@ -61,9 +68,11 @@ while True:
     if park:
         frame = park_lines(frame)
     cv2.imshow('img', frame)
-    park = detectRed(frame)
+    if detectRed(frame) and not park:
+        park = True
+
     blue = detectBlue(frame)
-    if not flag and nowtime != 0:
+    if nowtime != 0:
         print("{} Won".format(int(nowtime - starttime) * 10))
         flag = True
     if blue != before:
@@ -75,8 +84,7 @@ while True:
     key = cv2.waitKey(1)
     if key & 0xff == 27:
         break
-    if 81 <= key and key <= 84:
-        drive(angle, speed)
+    if 81 <= key <= 84:
         if key == 82:
             speed = 120
         if key == 81:
@@ -86,8 +94,15 @@ while True:
             if angle + 10 <= 150:
                 angle += 10
         if key == 84:
+            #if prev_key != 84:
+                # wheel_reset()
             speed = 65
-    if key == 127:
-        p = False
+    else:
+        speed = 90
+    drive(angle, speed)
+    if key == 112:
+        park = False
+    prev_key = key
+
 
 cv2.destroyAllWindows()
